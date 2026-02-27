@@ -15,3 +15,12 @@ Master
 conda lerobot activate
 python teleoperate.py
 ```
+
+Add to .env
+
+```text
+LEADER_PORT=/dev/ttyACM0
+LEADER_ID=leader1
+JETSON_IP=10.76.184.62
+ROBOT_ID=follower
+```
