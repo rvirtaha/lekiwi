@@ -17,6 +17,7 @@
 import os
 import time
 
+import numpy as np
 from dotenv import load_dotenv
 
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
@@ -71,6 +72,14 @@ def main():
 
         # Send action to robot
         _ = robot.send_action(action)
+
+        # Fix camera orientations
+        for key, val in observation.items():
+            if isinstance(val, np.ndarray) and val.ndim == 3:
+                if "wrist" in key:
+                    observation[key] = np.rot90(val, k=1)
+                else:
+                    observation[key] = val[::-1, ::-1]
 
         # Visualize
         log_rerun_data(observation=observation, action=action)
