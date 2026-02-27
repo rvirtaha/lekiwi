@@ -1,0 +1,15 @@
+[project]
+name = "robots"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "lerobot[lekiwi]",
+    "feetech-servo-sdk",
+    "python-dotenv",
+    "wandb",
+]
+
+[project.optional-dependencies]
+vla = [
+    "lerobot[smolvla]",
+]
