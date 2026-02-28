@@ -4,11 +4,12 @@ import os
 import time
 
 import numpy as np
-import torch
 from dotenv import load_dotenv
+import torch
 
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
+from lerobot.policies.utils import prepare_observation_for_inference, make_robot_action
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.utils.robot_utils import precise_sleep
@@ -20,13 +21,12 @@ FPS = 30
 POLICY_PATH = os.environ.get("POLICY_PATH", "rvirtaha/candy-pickup-act")
 DEVICE = os.environ.get("DEVICE", "cuda")
 
-# ACT uses front/wrist directly (no rename needed), action dim=9 (6 arm + 3 base)
-CAMERA_MAP = {"front": "front", "wrist": "wrist"}
 ACTION_KEYS = [
     "arm_shoulder_pan.pos", "arm_shoulder_lift.pos", "arm_elbow_flex.pos",
     "arm_wrist_flex.pos", "arm_wrist_roll.pos", "arm_gripper.pos",
     "x.vel", "y.vel", "theta.vel",
 ]
+ACTION_FEATURES = {"action": {"names": ACTION_KEYS}}
 
 
 def fix_camera_orientations(observation):
@@ -39,35 +39,13 @@ def fix_camera_orientations(observation):
     return observation
 
 
-def robot_obs_to_policy_obs(observation):
-    """Convert robot observation to ACT input format."""
-    policy_obs = {}
-
-    for robot_key, policy_key in CAMERA_MAP.items():
-        if robot_key in observation:
-            img = observation[robot_key]
-            img = torch.from_numpy(img.copy()).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-            policy_obs[f"observation.images.{policy_key}"] = img
-
-    if "observation.state" in observation:
-        state = observation["observation.state"]
-        policy_obs["observation.state"] = torch.from_numpy(state).unsqueeze(0).float()
-
-    return policy_obs
-
-
-def policy_action_to_robot_action(action):
-    """Convert ACT action tensor (dim=9) to robot action dict."""
-    if action.ndim == 2:
-        action = action[0]
-    action = action.cpu().numpy()
-
-    robot_action = {}
-    for i, key in enumerate(ACTION_KEYS):
-        if i < len(action):
-            robot_action[key] = float(action[i])
-
-    return robot_action
+def extract_policy_obs(observation):
+    """Extract policy-relevant keys from raw robot observation."""
+    return {
+        "observation.images.front": np.ascontiguousarray(observation["front"]),
+        "observation.images.wrist": np.ascontiguousarray(observation["wrist"]),
+        "observation.state": observation["observation.state"],
+    }
 
 
 def main():
@@ -119,7 +97,8 @@ def main():
         observation = robot.get_observation()
         fix_camera_orientations(observation)
 
-        policy_obs = robot_obs_to_policy_obs(observation)
+        policy_obs = extract_policy_obs(observation)
+        policy_obs = prepare_observation_for_inference(policy_obs, DEVICE)
 
         t_inf = time.perf_counter()
         with torch.inference_mode():
@@ -128,14 +107,13 @@ def main():
             action = postprocessor(raw_action)
         inf_time = time.perf_counter() - t_inf
 
-        robot_action = policy_action_to_robot_action(action)
+        robot_action = make_robot_action(action, ACTION_FEATURES)
 
         if step % 30 == 0:
             raw = raw_action[0].cpu().numpy() if raw_action.ndim == 2 else raw_action.cpu().numpy()
-            arm = [f"{robot_action[k]:+.3f}" for k in ACTION_KEYS[:6]]
             base = [f"{robot_action[k]:+.3f}" for k in ACTION_KEYS[6:]]
             raw_base = [f"{raw[i]:+.3f}" for i in range(6, min(9, len(raw)))]
-            print(f"[step {step}] inf={inf_time:.3f}s arm={arm} base_raw={raw_base} base_unnorm={base}")
+            print(f"[step {step}] inf={inf_time:.3f}s base_raw={raw_base} base_unnorm={base}")
 
         # Keyboard override for base
         keyboard_keys = keyboard.get_action()
