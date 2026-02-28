@@ -14,8 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import time
 
+from dotenv import load_dotenv
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.robots.lekiwi.config_lekiwi import LeKiwiClientConfig
 from lerobot.robots.lekiwi.lekiwi_client import LeKiwiClient
@@ -23,18 +25,36 @@ from lerobot.utils.constants import ACTION
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import log_say
 
-EPISODE_IDX = 0
+load_dotenv()
+
+DATASET_REPO = os.environ.get("DATASET_REPO", "rvirtaha/candy-pickup")
+EPISODE_IDX = int(os.environ.get("EPISODE_IDX", "0"))
 
 
 def main():
     # Initialize the robot config
-    robot_config = LeKiwiClientConfig(remote_ip="172.18.134.136", id="lekiwi")
+    robot_config = LeKiwiClientConfig(
+        remote_ip=os.environ["JETSON_IP"],
+        id=os.environ["ROBOT_ID"],
+        teleop_keys={
+            "forward": "w",
+            "backward": "s",
+            "left": "a",
+            "right": "d",
+            "rotate_left": "q",
+            "rotate_right": "e",
+            "speed_up": "r",
+            "speed_down": "f",
+            "quit": "z",
+        },
+    )
 
     # Initialize the robot
     robot = LeKiwiClient(robot_config)
 
     # Fetch the dataset to replay
-    dataset = LeRobotDataset("<hf_username>/<dataset_repo_id>", episodes=[EPISODE_IDX])
+    print(f"Loading dataset {DATASET_REPO}, episode {EPISODE_IDX}...")
+    dataset = LeRobotDataset(DATASET_REPO, episodes=[EPISODE_IDX])
     # Filter dataset to only include frames from the specified episode since episodes are chunked in dataset V3.0
     episode_frames = dataset.hf_dataset.filter(lambda x: x["episode_index"] == EPISODE_IDX)
     actions = episode_frames.select_columns(ACTION)
