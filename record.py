@@ -14,6 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import os
+
+import numpy as np
+from dotenv import load_dotenv
+
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import hw_to_dataset_features
 from lerobot.processor import make_default_processors
@@ -27,24 +33,66 @@ from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
 from lerobot.utils.visualization_utils import init_rerun
 
-NUM_EPISODES = 2
+load_dotenv()
+
 FPS = 30
-EPISODE_TIME_SEC = 30
 RESET_TIME_SEC = 10
-TASK_DESCRIPTION = "My task description"
-HF_REPO_ID = "<hf_username>/<dataset_repo_id>"
+HF_REPO_ID = "rvirtaha/candy-pickup"
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task", type=str, required=True, help="Task description for this recording session")
+    parser.add_argument("--num-episodes", type=int, default=20)
+    parser.add_argument("--episode-time", type=int, default=30)
+    args = parser.parse_args()
+
     # Create the robot and teleoperator configurations
-    robot_config = LeKiwiClientConfig(remote_ip="172.18.134.136", id="lekiwi")
-    leader_arm_config = SO100LeaderConfig(port="/dev/tty.usbmodem585A0077581", id="my_awesome_leader_arm")
-    keyboard_config = KeyboardTeleopConfig()
+    robot_config = LeKiwiClientConfig(
+        remote_ip=os.environ["JETSON_IP"],
+        id=os.environ["ROBOT_ID"],
+        teleop_keys={
+            "forward": "w",
+            "backward": "s",
+            "left": "a",
+            "right": "d",
+            "rotate_left": "q",
+            "rotate_right": "e",
+            "speed_up": "r",
+            "speed_down": "f",
+            "quit": "z",
+        },
+    )
+    leader_arm_config = SO100LeaderConfig(port=os.environ["LEADER_PORT"], id=os.environ["LEADER_ID"])
+    keyboard_config = KeyboardTeleopConfig(id="my_laptop_keyboard")
 
     # Initialize the robot and teleoperator
     robot = LeKiwiClient(robot_config)
     leader_arm = SO100Leader(leader_arm_config)
     keyboard = KeyboardTeleop(keyboard_config)
+
+    # Fix camera orientations (wrist: 90° CCW, others: 180°)
+    _original_get_observation = robot.get_observation
+
+    def get_observation_fixed():
+        obs = _original_get_observation()
+        for key, val in obs.items():
+            if isinstance(val, np.ndarray) and val.ndim == 3:
+                if "wrist" in key:
+                    obs[key] = np.rot90(val, k=1)
+                else:
+                    obs[key] = val[::-1, ::-1]
+        return obs
+
+    robot.get_observation = get_observation_fixed
+
+    # Patch observation_features to reflect rotated wrist shape
+    _original_obs_features = robot.observation_features
+    for key, shape in _original_obs_features.items():
+        if "wrist" in key and isinstance(shape, tuple) and len(shape) == 3:
+            h, w, c = shape
+            _original_obs_features[key] = (w, h, c)
+    robot.observation_features = _original_obs_features
 
     # TODO(Steven): Update this example to use pipelines
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
@@ -54,15 +102,23 @@ def main():
     obs_features = hw_to_dataset_features(robot.observation_features, OBS_STR)
     dataset_features = {**action_features, **obs_features}
 
-    # Create the dataset
-    dataset = LeRobotDataset.create(
-        repo_id=HF_REPO_ID,
-        fps=FPS,
-        features=dataset_features,
-        robot_type=robot.name,
-        use_videos=True,
-        image_writer_threads=4,
-    )
+    # Load existing dataset or create a new one
+    try:
+        dataset = LeRobotDataset(
+            repo_id=HF_REPO_ID,
+        )
+        dataset.start_image_writer(num_processes=0, num_threads=4)
+        print(f"Resuming dataset with {dataset.num_episodes} existing episodes")
+    except FileNotFoundError:
+        dataset = LeRobotDataset.create(
+            repo_id=HF_REPO_ID,
+            fps=FPS,
+            features=dataset_features,
+            robot_type=robot.name,
+            use_videos=True,
+            image_writer_threads=4,
+        )
+        print("Created new dataset")
 
     # Connect the robot and teleoperator
     # To connect you already should have this script running on LeKiwi: `python -m lerobot.robots.lekiwi.lekiwi_host --robot.id=my_awesome_kiwi`
@@ -80,7 +136,7 @@ def main():
 
         print("Starting record loop...")
         recorded_episodes = 0
-        while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
+        while recorded_episodes < args.num_episodes and not events["stop_recording"]:
             log_say(f"Recording episode {recorded_episodes}")
 
             # Main record loop
@@ -90,8 +146,8 @@ def main():
                 fps=FPS,
                 dataset=dataset,
                 teleop=[leader_arm, keyboard],
-                control_time_s=EPISODE_TIME_SEC,
-                single_task=TASK_DESCRIPTION,
+                control_time_s=args.episode_time,
+                single_task=args.task,
                 display_data=True,
                 teleop_action_processor=teleop_action_processor,
                 robot_action_processor=robot_action_processor,
@@ -100,7 +156,7 @@ def main():
 
             # Reset the environment if not stopping or re-recording
             if not events["stop_recording"] and (
-                (recorded_episodes < NUM_EPISODES - 1) or events["rerecord_episode"]
+                (recorded_episodes < args.num_episodes - 1) or events["rerecord_episode"]
             ):
                 log_say("Reset the environment")
                 record_loop(
@@ -109,7 +165,7 @@ def main():
                     fps=FPS,
                     teleop=[leader_arm, keyboard],
                     control_time_s=RESET_TIME_SEC,
-                    single_task=TASK_DESCRIPTION,
+                    single_task=args.task,
                     display_data=True,
                     teleop_action_processor=teleop_action_processor,
                     robot_action_processor=robot_action_processor,
@@ -126,6 +182,7 @@ def main():
             # Save episode
             dataset.save_episode()
             recorded_episodes += 1
+            events["exit_early"] = False
     finally:
         # Clean up
         log_say("Stop recording")

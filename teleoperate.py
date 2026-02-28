@@ -20,6 +20,7 @@ import time
 import numpy as np
 from dotenv import load_dotenv
 
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.teleoperators.so_leader import SO100Leader, SO100LeaderConfig
@@ -32,7 +33,26 @@ FPS = 30
 
 
 def main():
-    robot_config = LeKiwiClientConfig(remote_ip=os.environ["JETSON_IP"], id=os.environ["ROBOT_ID"])
+    robot_config = LeKiwiClientConfig(
+        remote_ip=os.environ["JETSON_IP"],
+        id=os.environ["ROBOT_ID"],
+        cameras={
+            "front": OpenCVCameraConfig(index_or_path=0, width=640, height=480, fps=30),
+            "wrist": OpenCVCameraConfig(index_or_path=2, width=640, height=480, fps=30),
+            "birdseye": OpenCVCameraConfig(index_or_path="http://10.76.184.104:5050/video_feed", width=800, height=600, fps=25),
+        },
+        teleop_keys={
+            "forward": "w",
+            "backward": "s",
+            "left": "a",
+            "right": "d",
+            "rotate_left": "q",
+            "rotate_right": "e",
+            "speed_up": "r",
+            "speed_down": "f",
+            "quit": "z",
+        },
+    )
     teleop_arm_config = SO100LeaderConfig(port=os.environ["LEADER_PORT"], id=os.environ["LEADER_ID"])
     keyboard_config = KeyboardTeleopConfig(id="my_laptop_keyboard")
 
@@ -78,7 +98,7 @@ def main():
             if isinstance(val, np.ndarray) and val.ndim == 3:
                 if "wrist" in key:
                     observation[key] = np.rot90(val, k=1)
-                else:
+                elif "birdseye" not in key:
                     observation[key] = val[::-1, ::-1]
 
         # Visualize
