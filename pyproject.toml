@@ -7,6 +7,7 @@ dependencies = [
     "feetech-servo-sdk",
     "python-dotenv",
     "wandb",
+    "accelerate>=1.12.0",
 ]
 
 [project.optional-dependencies]
