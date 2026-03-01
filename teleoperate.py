@@ -85,9 +85,9 @@ def main():
         arm_action = leader_arm.get_action()
         arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
         # Keyboard
-        gamepad = gamepad.get_action()
+        base_action = gamepad.get_action()
 
-        action = {**arm_action, **gamepad}
+        action = {**arm_action, **base_action}
 
         # Send action to robot
         _ = robot.send_action(action)
