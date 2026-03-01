@@ -26,12 +26,14 @@ from lerobot.processor import make_default_processors
 from lerobot.robots.lekiwi.config_lekiwi import LeKiwiClientConfig
 from lerobot.robots.lekiwi.lekiwi_client import LeKiwiClient
 from lerobot.scripts.lerobot_record import record_loop
-from lerobot.teleoperators.keyboard import KeyboardTeleop, KeyboardTeleopConfig
+#from lerobot.teleoperators.keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.teleoperators.so_leader import SO100Leader, SO100LeaderConfig
 from lerobot.utils.constants import ACTION, OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
 from lerobot.utils.visualization_utils import init_rerun
+
+from ps3 import PS3Teleop
 
 load_dotenv()
 
@@ -63,13 +65,13 @@ def main():
             "quit": "z",
         },
     )
-    leader_arm_config = SO100LeaderConfig(port=os.environ["LEADER_PORT"], id=os.environ["LEADER_ID"])
-    keyboard_config = KeyboardTeleopConfig(id="my_laptop_keyboard")
 
-    # Initialize the robot and teleoperator
+    leader_arm_config = SO100LeaderConfig(port=os.environ["LEADER_PORT"], id=os.environ["LEADER_ID"])
+
+    # Initialize the robot and teleoperators
     robot = LeKiwiClient(robot_config)
     leader_arm = SO100Leader(leader_arm_config)
-    keyboard = KeyboardTeleop(keyboard_config)
+    gamepad = PS3Teleop()
 
     # Fix camera orientations (wrist: 90° CCW, others: 180°)
     _original_get_observation = robot.get_observation
@@ -124,7 +126,7 @@ def main():
     # To connect you already should have this script running on LeKiwi: `python -m lerobot.robots.lekiwi.lekiwi_host --robot.id=my_awesome_kiwi`
     robot.connect()
     leader_arm.connect()
-    keyboard.connect()
+    gamepad.connect()
 
     # Initialize the keyboard listener and rerun visualization
     listener, events = init_keyboard_listener()
@@ -145,7 +147,7 @@ def main():
                 events=events,
                 fps=FPS,
                 dataset=dataset,
-                teleop=[leader_arm, keyboard],
+                teleop=[leader_arm, gamepad],
                 control_time_s=args.episode_time,
                 single_task=args.task,
                 display_data=True,
@@ -163,7 +165,7 @@ def main():
                     robot=robot,
                     events=events,
                     fps=FPS,
-                    teleop=[leader_arm, keyboard],
+                    teleop=[leader_arm, gamepad],
                     control_time_s=RESET_TIME_SEC,
                     single_task=args.task,
                     display_data=True,
@@ -188,7 +190,7 @@ def main():
         log_say("Stop recording")
         robot.disconnect()
         leader_arm.disconnect()
-        keyboard.disconnect()
+        gamepad.disconnect()
         listener.stop()
 
         dataset.finalize()
