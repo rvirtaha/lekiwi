@@ -2703,6 +2703,7 @@ dependencies = [
     { name = "lerobot", extra = ["lekiwi"] },
     { name = "pygame" },
     { name = "python-dotenv" },
+    { name = "transformers" },
     { name = "wandb" },
 ]
 
@@ -2719,6 +2720,7 @@ requires-dist = [
     { name = "lerobot", extras = ["smolvla"], marker = "extra == 'vla'" },
     { name = "pygame", specifier = ">=2.6.1" },
     { name = "python-dotenv" },
+    { name = "transformers", specifier = ">=4.57.6" },
     { name = "wandb" },
 ]
 
