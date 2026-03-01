@@ -11,7 +11,6 @@ from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.utils import prepare_observation_for_inference, make_robot_action
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
-from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 
@@ -68,13 +67,11 @@ def main():
             "quit": "z",
         },
     )
-    keyboard_config = KeyboardTeleopConfig(id="my_laptop_keyboard")
 
     robot = LeKiwiClient(robot_config)
-    keyboard = KeyboardTeleop(keyboard_config)
 
     print(f"Loading policy from {POLICY_PATH} on {DEVICE}...")
-    policy = SmolVLAPolicy.from_pretrained(POLICY_PATH)
+    policy = SmolVLAPolicy.from_pretrained(POLICY_PATH,device=DEVICE,dtype=torch.bfloat16)
     policy.eval()
     policy.to(DEVICE)
 
@@ -85,15 +82,13 @@ def main():
     print("Policy loaded.")
 
     robot.connect()
-    keyboard.connect()
 
     init_rerun(session_name="lekiwi_eval")
 
-    if not robot.is_connected or not keyboard.is_connected:
-        raise ValueError("Robot or keyboard is not connected!")
+    if not robot.is_connected:
+        raise ValueError("Robot is not connected!")
 
     print(f"Running eval with task: '{TASK}'")
-    print("Use keyboard to override base movement or Ctrl+C to stop.")
 
     step = 0
     while True:
@@ -121,14 +116,9 @@ def main():
             print(f"[step {step}] inf={inf_time:.3f}s base_raw={raw_base} base_unnorm={base}")
 
         # Keyboard override for base
-        keyboard_keys = keyboard.get_action()
-        base_override = robot._from_keyboard_to_base_action(keyboard_keys)
-        if len(base_override) > 0:
-            robot_action.update(base_override)
-
         robot.send_action(robot_action)
 
-        log_rerun_data(observation=observation, action=robot_action)
+        #log_rerun_data(observation=observation, action=robot_action)
 
         dt = time.perf_counter() - t0
         precise_sleep(max(1.0 / FPS - dt, 0.0))
