@@ -22,7 +22,8 @@ from dotenv import load_dotenv
 
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
-from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
+#from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
+from ps3 import PS3Teleop
 from lerobot.teleoperators.so_leader import SO100Leader, SO100LeaderConfig
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
@@ -54,23 +55,22 @@ def main():
         },
     )
     teleop_arm_config = SO100LeaderConfig(port=os.environ["LEADER_PORT"], id=os.environ["LEADER_ID"])
-    keyboard_config = KeyboardTeleopConfig(id="my_laptop_keyboard")
 
     # Initialize the robot and teleoperator
     robot = LeKiwiClient(robot_config)
     leader_arm = SO100Leader(teleop_arm_config)
-    keyboard = KeyboardTeleop(keyboard_config)
+    gamepad = PS3Teleop()
 
     # Connect to the robot and teleoperator
     # To connect you already should have this script running on LeKiwi: `python -m lerobot.robots.lekiwi.lekiwi_host --robot.id=my_awesome_kiwi`
     robot.connect()
     leader_arm.connect()
-    keyboard.connect()
+    gamepad.connect()
 
     # Init rerun viewer
     init_rerun(session_name="lekiwi_teleop")
 
-    if not robot.is_connected or not leader_arm.is_connected or not keyboard.is_connected:
+    if not robot.is_connected or not leader_arm.is_connected or not gamepad.is_connected:
         raise ValueError("Robot or teleop is not connected!")
 
     print("Starting teleop loop...")
@@ -85,10 +85,9 @@ def main():
         arm_action = leader_arm.get_action()
         arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
         # Keyboard
-        keyboard_keys = keyboard.get_action()
-        base_action = robot._from_keyboard_to_base_action(keyboard_keys)
+        gamepad = gamepad.get_action()
 
-        action = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
+        action = {**arm_action, **gamepad}
 
         # Send action to robot
         _ = robot.send_action(action)
@@ -105,7 +104,6 @@ def main():
         log_rerun_data(observation=observation, action=action)
 
         precise_sleep(max(1.0 / FPS - (time.perf_counter() - t0), 0.0))
-
 
 if __name__ == "__main__":
     main()
